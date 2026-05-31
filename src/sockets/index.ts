@@ -44,29 +44,29 @@ export const setupSocketIO = (socketServer: SocketServer) => {
 
     // Store user connection
     connectedUsers.set(userId, socket.id)
-    
+
     // Update user online status
     UserModel.update(userId, { isOnline: true, lastSeen: new Date() }).catch(console.error)
-    
+
     // Broadcast to all users that this user is online
     socket.broadcast.emit('user_online', { userId })
-    
+
     // Join user to their personal room (important for calls)
     socket.join(`user:${userId}`)
     console.log(`User ${userId} joined room: user:${userId}`)
 
     // ============ CHAT HANDLERS ============
-    
+
     // Handle joining chat rooms
     socket.on('join_chat', async (chatId: string) => {
       console.log(`User ${userId} joining chat room: chat:${chatId}`)
       socket.join(`chat:${chatId}`)
-      
+
       if (!userRooms.has(userId)) {
         userRooms.set(userId, new Set())
       }
       userRooms.get(userId)?.add(`chat:${chatId}`)
-      
+
       try {
         await MessageModel.markChatAsRead(chatId, userId)
         io.to(`chat:${chatId}`).emit('chat_read', { chatId, userId })
@@ -84,7 +84,7 @@ export const setupSocketIO = (socketServer: SocketServer) => {
     // Handle sending messages
     socket.on('send_message', async (messageData) => {
       console.log(`📨 Message received from ${userId}:`, messageData)
-      
+
       try {
         const message = await MessageModel.create({
           id: messageData.id || undefined,
@@ -131,28 +131,28 @@ export const setupSocketIO = (socketServer: SocketServer) => {
     })
 
     socket.on('typing', ({ chatId, userId: typingUserId }) => {
-      socket.to(`chat:${chatId}`).emit('user_typing', { 
-        chatId, 
-        userId: typingUserId || userId 
+      socket.to(`chat:${chatId}`).emit('user_typing', {
+        chatId,
+        userId: typingUserId || userId
       })
     })
 
     socket.on('stop_typing', ({ chatId, userId: typingUserId }) => {
-      socket.to(`chat:${chatId}`).emit('user_stop_typing', { 
-        chatId, 
-        userId: typingUserId || userId 
+      socket.to(`chat:${chatId}`).emit('user_stop_typing', {
+        chatId,
+        userId: typingUserId || userId
       })
     })
 
     socket.on('message_read', async ({ messageId, chatId }) => {
       console.log(`📖 Message read: ${messageId} by user ${userId}`)
-      
+
       try {
         await MessageModel.markAsRead(messageId, userId)
-        io.to(`chat:${chatId}`).emit('message_read', { 
-          messageId, 
+        io.to(`chat:${chatId}`).emit('message_read', {
+          messageId,
           userId,
-          chatId 
+          chatId
         })
       } catch (error) {
         console.error('Error marking message as read:', error)
@@ -161,7 +161,7 @@ export const setupSocketIO = (socketServer: SocketServer) => {
 
     socket.on('get_offline_messages', async () => {
       console.log(`📦 Getting offline messages for user ${userId}`)
-      
+
       try {
         const offlineMessages = await redisClient.lRange(`offline_messages:${userId}`, 0, -1)
         if (offlineMessages.length > 0) {
@@ -175,21 +175,21 @@ export const setupSocketIO = (socketServer: SocketServer) => {
     })
 
     // ============ CALL HANDLERS ============
+
+    // Handle call initiation
+    // ============ CALL HANDLERS ============
     
     // Handle call initiation
     socket.on('start_call', async ({ receiverId, callId, type }) => {
       console.log(`📞 Call started: ${callId} from ${userId} to ${receiverId}, type: ${type}`)
       
       const caller = await UserModel.findById(userId)
-      
-      // Check if receiver is online
       const receiverSocketId = connectedUsers.get(receiverId)
       const isReceiverOnline = !!receiverSocketId
       
       console.log(`Receiver ${receiverId} online: ${isReceiverOnline}`)
       
       if (isReceiverOnline) {
-        // Emit to receiver's personal room
         io.to(`user:${receiverId}`).emit('incoming_call', {
           callId,
           callerId: userId,
@@ -204,20 +204,26 @@ export const setupSocketIO = (socketServer: SocketServer) => {
       }
     })
 
-    // Handle call signal (WebRTC signaling)
-    socket.on('call_signal', async ({ callId, signal, receiverId }) => {
-      console.log(`🔔 Call signal for ${callId} from ${userId} to ${receiverId}`)
+    // Handle call signal (WebRTC signaling) - Corrigido para aceitar targetId do teu hook
+    // Handle call signal (WebRTC signaling) - Corrigido e Tipado para o teu hook
+    socket.on('call_signal', async ({ roomId, signal, targetId, senderId, senderName }) => {
+      const destinationId = targetId; 
+      const originId = senderId || userId;
       
-      const receiverSocketId = connectedUsers.get(receiverId)
+      console.log(`🔔 Call signal em Sala:${roomId || 'Mesh'} de ${originId} para ${destinationId}`)
+      
+      const receiverSocketId = connectedUsers.get(destinationId)
       if (receiverSocketId) {
-        io.to(`user:${receiverId}`).emit('call_signal', {
-          callId,
+        io.to(`user:${destinationId}`).emit('call_signal', {
+          callId: roomId, // Mantém a compatibilidade com o que o teu hook espera ler de volta
           signal,
-          callerId: userId,
+          senderId: originId,
+          senderName: senderName || 'Participante',
+          targetId: destinationId
         })
-        console.log(`✅ Emitted call_signal to user:${receiverId}`)
+        console.log(`✅ Emitted call_signal to user:${destinationId}`)
       } else {
-        console.log(`❌ Receiver ${receiverId} not found for signal`)
+        console.log(`❌ Receiver ${destinationId} not found for signal`)
       }
     })
 
@@ -253,7 +259,6 @@ export const setupSocketIO = (socketServer: SocketServer) => {
     socket.on('call_ended', async ({ callId, receiverId }) => {
       console.log(`🔚 Call ended: ${callId}`)
       
-      // Notify the other participant
       if (receiverId) {
         const receiverSocketId = connectedUsers.get(receiverId)
         if (receiverSocketId) {
@@ -261,7 +266,6 @@ export const setupSocketIO = (socketServer: SocketServer) => {
         }
       }
       
-      // Also notify the caller if different
       const callData = await redisClient.get(`call:${callId}`)
       if (callData) {
         const parsed = JSON.parse(callData)
@@ -290,21 +294,70 @@ export const setupSocketIO = (socketServer: SocketServer) => {
       })
     })
 
-    // Handle joining call room
-    socket.on('join_call', async ({ callId }) => {
-      console.log(`User ${userId} joining call room: call:${callId}`)
-      socket.join(`call:${callId}`)
+    // 🔥 CORREÇÃO CRÍTICA: Handle joining call room com WebRTC Mesh orchestration
+    socket.on('join_call', async ({ callId, userId: incomingUserId, userName }) => {
+      const roomName = `call:${callId}`
+      const currentUserId = incomingUserId || userId
+      
+      console.log(`User ${currentUserId} (${userName}) joining call room: ${roomName}`)
+      
+      // 1. Ir buscar sockets que já estão na sala ANTES de eu entrar formalmente
+      const socketsInRoom = await io.in(roomName).fetchSockets()
+      
+      const usersInRoom = socketsInRoom
+        .map(s => ({
+          userId: s.data.userId,
+          userName: s.data.userName || 'Participante'
+        }))
+        .filter(u => u.userId && u.userId !== currentUserId)
+
+      // 2. Guardar dados auxiliares no socket atual para mapeamento dinâmico subsequente
+      socket.data.userName = userName || 'Participante'
+      
+      // 3. Entrar efetivamente na sala
+      socket.join(roomName)
+
+      // Registar a sala no userRooms para limpeza no disconnect
+      if (!userRooms.has(currentUserId)) {
+        userRooms.set(currentUserId, new Set())
+      }
+      userRooms.get(currentUserId)?.add(roomName)
+
+      // 4. Enviar a lista de veteranos APENAS para quem acabou de entrar
+      socket.emit('room_users', usersInRoom)
+      console.log(`✅ Emitted room_users to ${currentUserId}. Encontrados: ${usersInRoom.length}`)
+
+      // 5. Avisar todos os outros utilizadores da sala que chegou um novato
+      socket.to(roomName).emit('user_joined', { 
+        userId: currentUserId, 
+        userName: userName || 'Participante' 
+      })
+      console.log(`📢 Emitted user_joined para a sala ${roomName}`)
     })
 
-    socket.on('leave_call', async ({ callId }) => {
-      console.log(`User ${userId} leaving call room: call:${callId}`)
-      socket.leave(`call:${callId}`)
+    // Handle leaving call room
+    socket.on('leave_call', async (roomId) => {
+      // Aceita tanto o id puro quanto o payload completo do seu hook
+      const cleanCallId = typeof roomId === 'string' ? roomId : roomId?.callId
+      const roomName = `call:${cleanCallId}`
+      
+      console.log(`User ${userId} leaving call room: ${roomName}`)
+      socket.leave(roomName)
+      userRooms.get(userId)?.delete(roomName)
+      
+      // Notificar os restantes utilizadores da sala para limparem o peer localmente
+      socket.to(roomName).emit('user_left', { userId })
     })
+
+
+
+
+
 
     // Handle disconnection
     socket.on('disconnect', async () => {
       console.log(`❌ User disconnected: ${userId}`)
-      
+
       setTimeout(async () => {
         if (!connectedUsers.has(userId)) {
           await UserModel.update(userId, { isOnline: false, lastSeen: new Date() })
@@ -313,10 +366,10 @@ export const setupSocketIO = (socketServer: SocketServer) => {
       }, 5000)
 
       connectedUsers.delete(userId)
-      
+
       await UserModel.update(userId, { isOnline: false, lastSeen: new Date() })
       socket.broadcast.emit('user_offline', { userId })
-      
+
       const rooms = userRooms.get(userId)
       if (rooms) {
         rooms.forEach(room => {
@@ -336,7 +389,7 @@ export const getIO = () => {
   }
   return io
 }
- 
+
 // Adicione estas funções de exportação no final do arquivo
 
 export const getConnectedUsers = () => {
