@@ -14,7 +14,6 @@ import { connectDatabase } from './config/database'
 import { connectRedis } from './config/redis'
 import { setupSocketIO } from './sockets'
 import { errorHandler } from './middleware/errorHandler.middleware'
-//import { rateLimitMiddleware } from './middleware/rateLimit.middleware'
 
 // Import routes
 import authRoutes from './routes/auth.routes'
@@ -27,32 +26,51 @@ import webhookRoutes from './routes/webhook.routes'
 const app = express()
 const httpServer = createServer(app)
 
-// Socket.IO setup
-const io = new Server(httpServer, {
-  cors: {
-    origin: process.env.FRONTEND_URL || 'http://localhost:5173',
-    credentials: true,
+// ==========================================
+// NOVO BLOCO DE CONFIGURAÇÃO DO CORS (Injetado aqui)
+// ==========================================
+const allowedOrigins = [
+  'http://localhost:5173',
+  process.env.FRONTEND_URL
+];
+
+const corsOptions = {
+  origin: (origin: any, callback: any) => {
+    if (
+      !origin || 
+      allowedOrigins.includes(origin) || 
+      origin.endsWith('.vercel.app') // Libera qualquer link dinâmico da Vercel
+    ) {
+      callback(null, true);
+    } else {
+      callback(new Error('Bloqueado pela política de CORS'));
+    }
   },
+  credentials: true,
+};
+
+// Configuração do Socket.IO usando o novo corsOptions
+const io = new Server(httpServer, {
+  cors: corsOptions,
   transports: ['websocket', 'polling'],
 })
+// ==========================================
 
 // Middleware
 app.use(
   helmet({
-  crossOriginOpenerPolicy: false,
-  crossOriginResourcePolicy: false,
-  contentSecurityPolicy: false,
-})
+    crossOriginOpenerPolicy: false,
+    crossOriginResourcePolicy: false,
+    contentSecurityPolicy: false,
+  })
 )
-app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
-  
-  credentials: true,
-}))
+
+// Middleware do Express aplicando o novo corsOptions
+app.use(cors(corsOptions))
+
 app.use(compression())
 app.use(express.json({ limit: '50mb' }))
 app.use(express.urlencoded({ extended: true, limit: '50mb' }))
-//app.use(rateLimitMiddleware)
 
 // Static files
 app.use('/uploads', express.static('uploads'))
