@@ -1,5 +1,5 @@
 import { Server as SocketServer, Socket } from 'socket.io'
-import { DefaultEventsMap } from 'socket.io/dist/typed-events'
+//import { DefaultEventsMap } from 'socket.io/dist/typed-events'
 import { verifyToken } from '../utils/encryption'
 import redisClient from '../config/redis'
 import { MessageModel } from '../models/Message.model'
