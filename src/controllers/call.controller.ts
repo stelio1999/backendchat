@@ -62,7 +62,7 @@ export const CallController = {
           [call.id]
         )
         
-        return res.status(404).json({ 
+        return res.status(201).json({ 
           error: 'User is offline',
           call: call 
         })
