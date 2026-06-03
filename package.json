@@ -3,13 +3,12 @@
   "version": "1.0.0",
   "description": "Backend do WhatsApp Clone em Node.js",
   "main": "dist/app.js",
+  
   "scripts": {
-    "dev": "nodemon src/app.ts",
-    "build": "tsc",
-    "start": "node dist/app.js",
-    "lint": "eslint src --ext .ts",
-    "db:migrate": "node dist/migrations/run.js",
-    "db:seed": "node dist/seeds/run.js"
+    "clean": "rimraf dist",
+    "build": "rimraf dist && tsc",
+    "dev": "ts-node-dev --respawn --transpile-only src/app.ts",
+    "start": "node dist/app.js"
   },
   "dependencies": {
     "@google/genai": "^2.7.0",
@@ -56,6 +55,7 @@
     "@typescript-eslint/parser": "^6.13.2",
     "eslint": "^8.55.0",
     "nodemon": "^3.0.2",
+    "rimraf": "^6.1.3",
     "ts-node": "^10.9.2",
     "typescript": "^5.3.3"
   },
