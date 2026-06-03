@@ -1,0 +1,4 @@
+Participante 1: Ônibus.
+Participante 2: E aqui é o último.
+Participante 1: Sim, sim.
+Participante 3: Transcreve palavra por palavra tudo o que é dito neste áudio de reunião. Identifica a troca de interlocutores se possível como "Participante um", "Participante dois". Não faças resumos aqui, apenas transcreve o áudio cru.
