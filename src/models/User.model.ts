@@ -19,7 +19,7 @@ export const UserModel = {
   async create(userData: Partial<User>): Promise<User> {
     const result = await query(
       `INSERT INTO users (id, email, phone, name, birth_date, nationality, avatar_url, status, is_online, last_seen)
-VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, true, NOW())`,
+VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, true, NOW()) RETURNING *`,
       [
         userData.email,
         userData.phone,
