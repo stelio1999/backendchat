@@ -206,24 +206,43 @@ export const setupSocketIO = (socketServer: SocketServer) => {
 
     // Handle call signal (WebRTC signaling) - Corrigido para aceitar targetId do teu hook
     // Handle call signal (WebRTC signaling) - Corrigido e Tipado para o teu hook
-    socket.on('call_signal', async ({ roomId, signal, targetId, senderId, senderName }) => {
-      const destinationId = targetId; 
-      const originId = senderId || userId;
+    // ============ CALL HANDLERS ============
+
+    // Handle call signal (WebRTC signaling) - Corrigido para suportar Chamadas Privadas E de Grupo
+    socket.on('call_signal', async (payload) => {
+      // 1. Extração Inteligente com Fallback para mapear os dois cenários (Privado e Grupo)
+      const destinationId = payload.targetId || payload.receiverId; 
+      const originId = payload.senderId || userId;
+      const currentCallId = payload.roomId || payload.callId;
       
-      console.log(`🔔 Call signal em Sala:${roomId || 'Mesh'} de ${originId} para ${destinationId}`)
+      console.log(`🔔 [SOCKET BI-DIRECIONAL] Sinal de Chamada capturado:`);
+      console.log(`   - ID da Chamada/Sala: ${currentCallId}`);
+      console.log(`   - Origem (Quem enviou): ${originId}`);
+      console.log(`   - Destino (Quem deve receber): ${destinationId}`);
+      console.log(`   - Tipo do Sinal:`, payload.signal?.type || 'ICE Candidate');
+
+      if (!destinationId) {
+        console.error('❌ Erro de Sinalização: Destinatário (targetId/receiverId) não foi fornecido no payload!');
+        return;
+      }
       
+      // 2. Localizar o Socket ID do utilizador destino
       const receiverSocketId = connectedUsers.get(destinationId)
+      
       if (receiverSocketId) {
-        io.to(`user:${destinationId}`).emit('call_signal', {
-          callId: roomId, // Mantém a compatibilidade com o que o teu hook espera ler de volta
-          signal,
+        // Envia o sinal exatamente no formato que o teu useCall e CallListener esperam capturar
+        io.to(receiverSocketId).emit('call_signal', {
+          callId: currentCallId,
+          roomId: currentCallId, // Envia ambos para garantir compatibilidade estrutural
+          signal: payload.signal,
           senderId: originId,
-          senderName: senderName || 'Participante',
+          callerId: originId,    // Fallback para hooks antigos
+          senderName: payload.senderName || 'Participante',
           targetId: destinationId
         })
-        console.log(`✅ Emitted call_signal to user:${destinationId}`)
+        console.log(`   ✅ Sinal encaminhado com sucesso para o socket do usuário: ${destinationId}`)
       } else {
-        console.log(`❌ Receiver ${destinationId} not found for signal`)
+        console.log(`   ❌ Sinal não enviado: O usuário destino ${destinationId} está offline ou desconectado.`)
       }
     })
 
