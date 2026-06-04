@@ -76,21 +76,54 @@ export const ChatModel = {
   async getUserChats(userId: string): Promise<any[]> {
     const result = await query(
       `SELECT 
-         c.*,
-         (SELECT json_agg(u) FROM users u 
-          INNER JOIN chat_participants cp ON cp.user_id = u.id 
-          WHERE cp.chat_id = c.id) as participants,
-         (SELECT json_build_object(
-            'id', m.id,
-            'content', m.content,
-            'created_at', m.created_at,
-            'sender_id', m.sender_id
-          ) FROM messages m 
-          WHERE m.chat_id = c.id 
-          ORDER BY m.created_at DESC 
-          LIMIT 1) as last_message
+          c.id,
+          c.type,
+          c.created_by as "createdBy",
+          c.created_at as "createdAt",
+          c.updated_at as "updatedAt",
+          
+          -- Define o nome do Chat: se for privado usa o nome do outro contacto, senão usa o nome do grupo
+          CASE 
+            WHEN c.type = 'private' THEN ou.name 
+            ELSE c.name 
+          END as name,
+          
+          -- Define o avatar do Chat: se for privado usa o do outro contacto, senão usa o do grupo
+          CASE 
+            WHEN c.type = 'private' THEN ou.avatar_url 
+            ELSE c.avatar_url 
+          END as "avatarUrl",
+          
+          -- Guarda o ID do outro utilizador (essencial para o teu usePresenceStore no frontend)
+          CASE 
+            WHEN c.type = 'private' THEN ou.id 
+            ELSE NULL 
+          END as "otherUserId",
+
+          -- Lista de participantes completa para compatibilidade
+          (SELECT json_agg(json_build_object('userId', u.id, 'name', u.name)) 
+           FROM users u 
+           INNER JOIN chat_participants cp2 ON cp2.user_id = u.id 
+           WHERE cp2.chat_id = c.id) as participants,
+          
+          -- Última mensagem formatada exatamente em camelCase para o React
+          (SELECT json_build_object(
+              'id', m.id,
+              'content', m.content,
+              'createdAt', m.created_at,
+              'senderId', m.sender_id
+            ) FROM messages m 
+            WHERE m.chat_id = c.id 
+            ORDER BY m.created_at DESC 
+            LIMIT 1) as "lastMessage"
+
        FROM chats c
        INNER JOIN chat_participants cp ON cp.chat_id = c.id
+       
+       -- Faz um JOIN para encontrar o OUTRO participante se a conversa for privada
+       LEFT JOIN chat_participants cp_other ON cp_other.chat_id = c.id AND cp_other.user_id != $1 AND c.type = 'private'
+       LEFT JOIN users ou ON ou.id = cp_other.user_id
+       
        WHERE cp.user_id = $1
        ORDER BY c.updated_at DESC`,
       [userId]
